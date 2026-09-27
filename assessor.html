@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Blinded Assessment</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+  :root { --navy:#1F3864; --blue:#2E75B6; --light:#EAF2FB; --bg:#F6F8FB; --warn:#FFF2CC; --red:#C00000; --ok:#1E7B34; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; font-family:'Sarabun',sans-serif; background:var(--bg); color:#222; font-size:16px;
+         padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+  header { background:var(--navy); color:#fff; padding:12px 16px; position:sticky; top:0; z-index:5; }
+  header h1 { font-size:18px; margin:0; } header .meta { font-size:13px; opacity:.85; }
+  main { max-width:620px; margin:0 auto; padding:12px; }
+  .card { background:#fff; border-radius:14px; padding:14px; margin-bottom:10px; box-shadow:0 1px 4px rgba(0,0,0,.06); }
+  h2 { font-size:16px; color:var(--navy); margin:0 0 8px; }
+  .q { font-weight:600; margin:10px 0 4px; } .q:first-of-type { margin-top:0; }
+  .hint { font-size:13px; color:#666; margin-bottom:6px; }
+  .g { display:grid; gap:6px; }
+  .c { border:1.5px solid #cfd8e3; border-radius:10px; padding:9px 6px; background:#fff; font:inherit; font-size:14px;
+       line-height:1.25; color:#222; text-align:center; }
+  .c b { display:block; font-size:18px; }
+  .c.on { border-color:var(--blue); background:var(--light); color:var(--navy); font-weight:600; }
+  .c:disabled { opacity:.45; }
+  .c.left { text-align:left; }
+  input[type=text], input[type=tel] { width:100%; padding:11px; border:1.5px solid #cfd8e3; border-radius:10px; font:inherit; }
+  .btn { display:block; width:100%; padding:13px; border:0; border-radius:12px; background:var(--navy); color:#fff;
+         font:inherit; font-weight:700; font-size:17px; margin-top:8px; }
+  .btn.sec { background:#fff; color:var(--navy); border:1.5px solid var(--navy); }
+  .btn:disabled { opacity:.5; }
+  .pm { display:flex; gap:8px; align-items:center; }
+  .pm div { flex:1; background:var(--light); border-radius:10px; padding:8px; text-align:center; }
+  .pm b { font-size:22px; color:var(--navy); display:block; }
+  .tot { background:var(--light); border-radius:10px; padding:8px 10px; margin-top:8px; font-weight:600; color:var(--navy); }
+  .alert { background:var(--warn); border-radius:12px; padding:12px; margin-bottom:10px; }
+  .alert.red { background:#FDE2E2; color:var(--red); font-weight:600; }
+  .err { color:var(--red); margin-top:8px; }
+  .hidden { display:none !important; }
+  .row { display:flex; justify-content:space-between; align-items:center; }
+</style>
+</head>
+<body>
+<header><h1>Blinded Assessment</h1><div class="meta" id="meta">AR-AZM Crossover (PROBE)</div></header>
+<main id="app"><div class="card">กำลังโหลด...</div></main>
+
+<script>
+// ===================== CONFIG =====================
+const CONFIG = {
+  LIFF_ID: 'YOUR_ASSESSOR_LIFF_ID',
+  API_URL: 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec',
+};
+
+let ID_TOKEN = null, ME = null, PREP = null, F = {};
+const $app = document.getElementById('app');
+
+async function api(action, extra) {
+  const res = await fetch(CONFIG.API_URL, { method: 'POST',
+    body: JSON.stringify(Object.assign({ action: action, idToken: ID_TOKEN }, extra || {})) });
+  const j = await res.json();
+  if (!j.ok) throw new Error(j.error || 'เกิดข้อผิดพลาด');
+  return j;
+}
+
+async function boot() {
+  try {
+    await liff.init({ liffId: CONFIG.LIFF_ID });
+    if (!liff.isLoggedIn()) { liff.login({ redirectUri: location.href }); return; }
+    ID_TOKEN = liff.getIDToken();
+    ME = await api('a_status');
+    ME.registered ? viewList() : viewRegister();
+  } catch (e) { fail(e); }
+}
+
+// ===================== register =====================
+function viewRegister() {
+  $app.innerHTML = `<div class="card"><h2>ลงทะเบียนผู้ประเมิน</h2>
+    <div class="hint">ใช้รหัสและ PIN ที่ได้รับจากทีมวิจัย (ทำครั้งเดียว)</div>
+    <div class="q">รหัสผู้ประเมิน</div><input id="aid" type="text" placeholder="N01" autocapitalize="characters">
+    <div class="q">PIN</div><input id="pin" type="tel" inputmode="numeric" maxlength="6">
+    <button class="btn" id="go">ลงทะเบียน</button><div class="err" id="err"></div></div>`;
+  document.getElementById('go').onclick = async function () {
+    this.disabled = true;
+    try { ME = await api('a_register', { assessorId: val('aid'), pin: val('pin') }); viewList(); }
+    catch (e) { document.getElementById('err').textContent = e.message; this.disabled = false; }
+  };
+}
+
+// ===================== participant list =====================
+async function viewList(refresh) {
+  if (refresh) ME = await api('a_status');
+  document.getElementById('meta').textContent = ME.assessorId + ' • ' + ME.name + ' (' + (ME.role === 'backup' ? 'สำรอง' : 'หลัก') + ')';
+  $app.innerHTML = `<div class="card"><div class="row"><h2>เลือกผู้เข้าร่วม</h2>
+      <button class="c" style="width:auto;padding:6px 12px" id="rf">รีเฟรช</button></div>
+    <div class="hint">ประเมินก่อนพบแพทย์และก่อนรับยา ห้ามถามผู้ปกครองเรื่องยาที่ได้รับ</div>
+    <div class="g" style="grid-template-columns:repeat(3,1fr)">
+      ${ME.participants.map(function (p) {
+        return `<button class="c" data-id="${p.id}"><b style="font-size:16px">${p.id}</b>Day ${p.day}</button>`; }).join('')
+        || '<div class="hint">ยังไม่มีผู้เข้าร่วม</div>'}
+    </div></div>`;
+  document.getElementById('rf').onclick = function () { viewList(true); };
+  $app.querySelectorAll('[data-id]').forEach(function (b) { b.onclick = function () { openForm(b.dataset.id); }; });
+}
+
+// ===================== assessment form =====================
+const TNSS = [
+  ['c', 'คัดจมูก', 'หายใจทางปาก / กรนขณะนอน'], ['r', 'น้ำมูกไหล', 'เช็ดหรือสั่งน้ำมูกบ่อยแค่ไหน'],
+  ['s', 'จาม', 'จามกี่ครั้งต่อวัน'], ['i', 'คันจมูก', 'ขยี้จมูก / allergic salute'],
+];
+const RH = [
+  ['sw', 'บวม inferior turbinate', ['ไม่บวม', 'ยังเห็น center ของ middle turbinate', 'ระหว่าง 1 และ 3', 'มองไม่เห็น middle turbinate']],
+  ['co', 'สีเยื่อบุ inferior turbinate', ['ปกติ', 'ชมพู', 'แดง', 'ซีด/ม่วงคล้ำ']],
+  ['am', 'ปริมาณน้ำมูก', ['ไม่มี', 'เล็กน้อยติดผนัง', 'ระหว่าง 1 และ 3', 'เต็มโพรงจมูก']],
+  ['ch', 'ลักษณะน้ำมูก', ['ไม่มี', 'เป็นหนอง', 'เหนียวข้น', 'ใส']],
+];
+
+async function openForm(sid) {
+  $app.innerHTML = '<div class="card">กำลังโหลด ' + sid + '...</div>';
+  try { PREP = await api('a_prepare', { subjectId: sid }); } catch (e) { return fail(e); }
+  const pp = PREP.ageGroup === '2-5';
+  F = { subjectId: sid, visit: PREP.suggested, source: pp ? 'PP' : 'S', tnss: {}, vas: {}, rh: {},
+        informantSame: null, discrepancy: false, rhSide: null, rhBeforeIncs: null, rhUnable: false, aware: null };
+
+  if (PREP.blocked) {
+    $app.innerHTML = `<div class="alert red">ท่านเคยรายงานว่าทราบกลุ่มการรักษาของ ${sid}
+      ตามโปรโตคอลห้ามประเมินรายนี้อีก — กรุณาให้ผู้ประเมินคนอื่นประเมิน</div>
+      <button class="btn sec" onclick="viewList(true)">กลับ</button>`;
+    return;
+  }
+
+  $app.innerHTML = `
+  <div class="card"><div class="row"><h2>${sid} • Day ${PREP.studyDay}</h2><span class="hint">อายุ ${PREP.ageGroup} ปี</span></div>
+    <div class="q">Visit</div>
+    <div class="g" style="grid-template-columns:repeat(3,1fr)" data-k="visit">
+      ${PREP.visits.map(function (v) {
+        return `<button class="c${v.v === F.visit ? ' on' : ''}" data-v="${v.v}" ${v.done || !v.open ? 'disabled' : ''}>
+          <b style="font-size:15px">${v.v}${v.done ? ' ✓' : ''}</b>Day ${v.day}</button>`; }).join('')}
+    </div>
+    <div class="q">PM2.5 ขณะนี้ (Air4Thai, μg/m³)</div>
+    <div class="pm" id="pm"></div>
+    <div class="hint" id="pmt"></div>
+    <button class="c" style="width:100%;margin-top:6px" id="pmr">ดึงค่าใหม่</button>
+    <div class="hint">ค่าที่บันทึกจริงคือค่า ณ เวลากดส่ง</div>
+  </div>
+
+  <div class="card"><h2>แหล่งข้อมูล TNSS / VAS</h2>
+    <div class="g" style="grid-template-columns:1fr 1fr" data-k="source">
+      <button class="c${F.source === 'S' ? ' on' : ''}" data-v="S">Self + parent (6–15 ปี)</button>
+      <button class="c${F.source === 'PP' ? ' on' : ''}" data-v="PP">Parent-proxy (2–5 ปี)</button></div>
+    <div class="q">ผู้ให้ข้อมูลเป็นคนเดิมกับครั้งก่อน ${PREP.lastInformant ? '(' + PREP.lastInformant + ')' : ''}</div>
+    <div class="g" style="grid-template-columns:1fr 1fr" data-k="informantSame">
+      <button class="c" data-v="1">ใช่</button><button class="c" data-v="0">ไม่ใช่ / ครั้งแรก</button></div>
+    <input type="text" id="rel" placeholder="ความสัมพันธ์กับผู้ป่วย เช่น มารดา" value="${PREP.lastInformant || ''}" style="margin-top:6px">
+    <div id="discBox"><div class="q">คำตอบเด็กกับผู้ปกครองไม่ตรงกัน (ใช้คำตอบเด็ก)</div>
+      <div class="g" style="grid-template-columns:1fr 1fr" data-k="discrepancy">
+        <button class="c on" data-v="0">ตรงกัน</button><button class="c" data-v="1">ไม่ตรงกัน</button></div></div>
+  </div>
+
+  <div class="card"><h2>TNSS (0–3)</h2>
+    <div class="hint">0 ไม่มี • 1 เล็กน้อย • 2 ปานกลาง • 3 รุนแรง</div>
+    ${TNSS.map(function (x) { return `<div class="q">${x[1]}</div><div class="hint px">${x[2]}</div>
+      <div class="g" style="grid-template-columns:repeat(4,1fr)" data-k="tnss.${x[0]}">
+      ${[0, 1, 2, 3].map(function (n) { return `<button class="c" data-v="${n}"><b>${n}</b></button>`; }).join('')}</div>`; }).join('')}
+    <div class="tot" id="tnssT">Total TNSS = –</div>
+  </div>
+
+  <div class="card"><h2>VAS (0–10)</h2>
+    ${TNSS.map(function (x) { return `<div class="q">${x[1]}</div>
+      <div class="g" style="grid-template-columns:repeat(11,1fr)" data-k="vas.${x[0]}">
+      ${[0,1,2,3,4,5,6,7,8,9,10].map(function (n) { return `<button class="c" style="padding:8px 0" data-v="${n}">${n}</button>`; }).join('')}</div>`; }).join('')}
+    <div class="tot" id="vasT">Mean VAS = –</div>
+  </div>
+
+  <div class="card"><h2>Anterior rhinoscopy</h2>
+    <div class="hint">ใช้ nasal speculum + แหล่งแสงมาตรฐาน ตรวจสองข้าง ให้คะแนนข้างที่เป็นมากกว่า ก่อนพ่น INCS วันนั้น</div>
+    <div class="g" style="grid-template-columns:1fr" data-k="rhUnable">
+      <button class="c left" data-v="1">ตรวจไม่ได้ (ไม่ให้ความร่วมมือ → missing)</button></div>
+    <div id="rhBox">
+      ${RH.map(function (x) { return `<div class="q">${x[1]}</div>
+        <div class="g" style="grid-template-columns:1fr 1fr" data-k="rh.${x[0]}">
+        ${x[2].map(function (t, n) { return `<button class="c left" data-v="${n}"><b style="display:inline;font-size:16px">${n}</b> ${t}</button>`; }).join('')}</div>`; }).join('')}
+      <div class="tot" id="rhT">Total rhinoscopy = –</div>
+      <div class="q">ข้างที่ใช้คะแนน</div>
+      <div class="g" style="grid-template-columns:1fr 1fr" data-k="rhSide"><button class="c" data-v="R">ขวา (R)</button><button class="c" data-v="L">ซ้าย (L)</button></div>
+    </div>
+    <div class="q">ตรวจก่อนพ่น INCS ของวันนี้</div>
+    <div class="g" style="grid-template-columns:1fr 1fr" data-k="rhBeforeIncs"><button class="c" data-v="1">ใช่</button><button class="c" data-v="0">ไม่ใช่</button></div>
+  </div>
+
+  <div class="card"><h2>การปกปิด</h2>
+    <div class="q">ระหว่างประเมิน ท่านทราบกลุ่มการรักษาของผู้ป่วยรายนี้หรือไม่</div>
+    <div class="g" style="grid-template-columns:1fr 1fr" data-k="aware"><button class="c" data-v="0">ไม่ทราบ</button><button class="c" data-v="1">ทราบ</button></div>
+    <div class="alert red hidden" id="awareMsg" style="margin-top:8px">ระบบจะแจ้งทีมวิจัย และท่านจะประเมินผู้ป่วยรายนี้ไม่ได้อีก กรุณาระบุว่าทราบได้อย่างไรในหมายเหตุ</div>
+    <div class="q">หมายเหตุ</div><input type="text" id="note">
+  </div>
+
+  <button class="btn" id="send">ตรวจสอบและส่ง</button><div class="err" id="err"></div>
+  <button class="btn sec" onclick="viewList(true)">ยกเลิก</button>`;
+
+  renderPM(PREP.pm25);
+  document.getElementById('pmr').onclick = async function () {
+    this.disabled = true; try { renderPM((await api('a_pm25')).pm25); } catch (e) {} this.disabled = false;
+  };
+  $app.querySelectorAll('[data-k]').forEach(function (g) {
+    g.querySelectorAll('.c').forEach(function (b) { b.onclick = function () { choose(g, b); }; });
+  });
+  refresh();
+  document.getElementById('send').onclick = submit;
+}
+
+function choose(g, b) {
+  const k = g.dataset.k;
+  if (k === 'rhUnable') { b.classList.toggle('on'); F.rhUnable = b.classList.contains('on'); return refresh(); }
+  g.querySelectorAll('.c').forEach(function (x) { x.classList.remove('on'); });
+  b.classList.add('on');
+  const v = b.dataset.v;
+  if (k.indexOf('.') > 0) { const p = k.split('.'); F[p[0]][p[1]] = Number(v); }
+  else if (['informantSame', 'discrepancy', 'rhBeforeIncs', 'aware'].indexOf(k) >= 0) F[k] = v === '1';
+  else F[k] = v;
+  refresh();
+}
+
+function refresh() {
+  document.getElementById('discBox').classList.toggle('hidden', F.source !== 'S');
+  document.querySelectorAll('.px').forEach(function (x) { x.classList.toggle('hidden', F.source !== 'PP'); });
+  document.getElementById('rhBox').classList.toggle('hidden', F.rhUnable);
+  document.getElementById('awareMsg').classList.toggle('hidden', F.aware !== true);
+  document.getElementById('tnssT').textContent = 'Total TNSS = ' + sum(F.tnss, 4);
+  const vs = sum(F.vas, 4);
+  document.getElementById('vasT').textContent = 'Mean VAS = ' + (vs === '–' ? '–' : (vs / 4).toFixed(2));
+  document.getElementById('rhT').textContent = 'Total rhinoscopy = ' + sum(F.rh, 4);
+}
+function sum(o, n) { const v = Object.values(o); return v.length < n ? '–' : v.reduce(function (a, b) { return a + b; }, 0); }
+
+function renderPM(pm) {
+  document.getElementById('pm').innerHTML = ['35t', '36t'].map(function (s) {
+    return `<div>${s}<b>${pm[s].value === '' ? 'N/A' : pm[s].value}</b></div>`; }).join('');
+  document.getElementById('pmt').textContent = 'เวลาตรวจวัด: ' + (pm['35t'].time || pm['36t'].time || '-');
+}
+
+async function submit() {
+  const err = document.getElementById('err'), miss = [];
+  if (!F.visit) miss.push('visit');
+  if (F.informantSame === null) miss.push('ผู้ให้ข้อมูลคนเดิม');
+  if (Object.keys(F.tnss).length < 4) miss.push('TNSS ครบ 4 ข้อ');
+  if (Object.keys(F.vas).length < 4) miss.push('VAS ครบ 4 ข้อ');
+  if (!F.rhUnable && Object.keys(F.rh).length < 4) miss.push('rhinoscopy ครบ 4 ข้อ');
+  if (!F.rhUnable && !F.rhSide) miss.push('ข้างที่ใช้คะแนน');
+  if (F.rhBeforeIncs === null) miss.push('ตรวจก่อนพ่น INCS');
+  if (F.aware === null) miss.push('การปกปิด');
+  if (miss.length) { err.textContent = 'ยังไม่ได้ตอบ: ' + miss.join(', '); return; }
+  const vs = sum(F.vas, 4);
+  if (!confirm(F.subjectId + ' ' + F.visit + '\nTNSS = ' + sum(F.tnss, 4) + '\nMean VAS = ' + (vs / 4).toFixed(2) +
+      '\nRhinoscopy = ' + (F.rhUnable ? 'ตรวจไม่ได้' : sum(F.rh, 4)) + '\n\nยืนยันส่ง? (แก้ไขภายหลังต้องแจ้งทีมวิจัย)')) return;
+  const btn = document.getElementById('send'); btn.disabled = true; btn.textContent = 'กำลังส่ง...';
+  try {
+    const r = await api('a_submit', { data: Object.assign({}, F, { informantRelation: val('rel'), note: val('note') }) });
+    $app.innerHTML = `<div class="card"><h2>บันทึกแล้ว ✓</h2>
+      <div>${F.subjectId} • ${r.visit} • TNSS ${r.tnssTotal}</div>
+      <div class="hint">PM2.5 ที่บันทึก: 35t = ${r.pm25['35t'].value || 'N/A'}, 36t = ${r.pm25['36t'].value || 'N/A'}</div></div>
+      <button class="btn" onclick="viewList(true)">ประเมินรายถัดไป</button>`;
+  } catch (e) { err.textContent = e.message; btn.disabled = false; btn.textContent = 'ตรวจสอบและส่ง'; }
+}
+
+function val(id) { const el = document.getElementById(id); return el ? el.value.trim() : ''; }
+function fail(e) { $app.innerHTML = `<div class="card"><h2>เกิดข้อผิดพลาด</h2><div class="err">${e.message || e}</div></div>
+  <button class="btn sec" onclick="location.reload()">ลองใหม่</button>`; }
+
+boot();
+</script>
+</body>
+</html>
