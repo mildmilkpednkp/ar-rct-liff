@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ตัวอย่าง: บันทึกอาการจมูก (ผู้ปกครอง)</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --navy:#1F3864; --blue:#2E75B6; --light:#EAF2FB; --bg:#F6F8FB; --ok:#1E7B34; --warn:#FFF2CC; --red:#C00000; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; font-family:'Sarabun',sans-serif; background:var(--bg); color:#222; font-size:17px;
+         padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+  header { background:var(--navy); color:#fff; padding:14px 16px; }
+  header h1 { font-size:19px; margin:0; }
+  header .meta { font-size:14px; opacity:.85; margin-top:2px; }
+  main { max-width:560px; margin:0 auto; padding:14px; }
+  .card { background:#fff; border-radius:14px; padding:16px; margin-bottom:12px; box-shadow:0 1px 4px rgba(0,0,0,.06); }
+  .q { font-weight:600; margin-bottom:4px; }
+  .hint { font-size:14px; color:#666; margin-bottom:10px; }
+  .opts { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
+  .opts.col { grid-template-columns:1fr; }
+  .opt { border:1.5px solid #cfd8e3; border-radius:10px; padding:10px 4px; text-align:center; background:#fff;
+         font:inherit; font-size:15px; line-height:1.25; color:#222; }
+  .opt b { display:block; font-size:20px; }
+  .opts.col .opt { text-align:left; padding:10px 12px; }
+  .opt.on { border-color:var(--blue); background:var(--light); color:var(--navy); font-weight:600; }
+  input[type=text], input[type=number], input[type=tel] { width:100%; padding:12px; border:1.5px solid #cfd8e3; border-radius:10px; font:inherit; }
+  input[type=range] { width:100%; accent-color:var(--blue); }
+  .vas { display:flex; justify-content:space-between; font-size:13px; color:#666; }
+  .vasval { font-size:34px; font-weight:700; color:var(--navy); text-align:center; }
+  .btn { display:block; width:100%; padding:14px; border:0; border-radius:12px; background:var(--navy); color:#fff;
+         font:inherit; font-weight:700; font-size:18px; margin-top:8px; }
+  .btn.sec { background:#fff; color:var(--navy); border:1.5px solid var(--navy); }
+  .btn:disabled { opacity:.5; }
+  .pill { display:inline-block; background:var(--light); color:var(--navy); border-radius:20px; padding:4px 12px; font-size:14px; margin:2px 0; }
+  .alert { background:var(--warn); border-radius:12px; padding:12px; margin-bottom:12px; }
+  .alert.red { background:#FDE2E2; color:var(--red); font-weight:600; }
+  .err { color:var(--red); margin-top:8px; }
+  .center { text-align:center; }
+  h2 { font-size:17px; color:var(--navy); margin:4px 0 10px; }
+  .hidden { display:none; }
+
+  .demo-bar { background:#FFF2CC; color:#6B4E00; font-size:13px; padding:7px 14px; display:flex;
+              justify-content:space-between; gap:8px; align-items:center; border-bottom:1px solid #F0DC9A; }
+  .demo-bar a { color:#1F3864; font-weight:600; text-decoration:none; white-space:nowrap; }
+  select { width:100%; padding:11px; border:1.5px solid #cfd8e3; border-radius:10px; font:inherit; background:#fff; }
+</style>
+</head>
+<body>
+<div class="demo-bar"><span>ตัวอย่างสำหรับการพิจารณา • ไม่มีการบันทึกข้อมูลจริง</span><a href="#" onclick="location.reload();return false;">เริ่มใหม่</a></div>
+<header><h1>บันทึกอาการจมูก</h1><div class="meta" id="meta">โครงการวิจัย Azithromycin ในเด็กโรคจมูกอักเสบภูมิแพ้</div></header>
+<main id="app"><div class="card center">กำลังโหลด...</div></main>
+
+<script>
+// ===================== CONFIG (แก้ก่อน deploy) =====================
+const CONFIG = {
+  LIFF_ID: 'YOUR_LIFF_ID',
+  API_URL: 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec',
+  TEAM_PHONE: '086-383-5363 หรือ 053-999-200 ต่อ 1175',          // เบอร์ติดต่อทีมวิจัย
+  RECALL: 'ในช่วง 24 ชั่วโมงที่ผ่านมา',  // ช่วงเวลาอ้างอิงของ TNSS/VAS (ให้ตรงกับ protocol)
+};
+
+// ===================== state =====================
+let ID_TOKEN = null, ST = null, D = {}, ENV = {};
+const $app = document.getElementById('app');
+
+// ===================== API =====================
+
+function demoPM() {
+  const d = new Date(), p = function (n) { return String(n).padStart(2, '0'); };
+  const t = d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':00';
+  const r = function (b) { return Math.round((b + Math.random() * 4) * 10) / 10; };
+  return { '35t': { value: r(16), time: t }, '36t': { value: r(14), time: t } };
+}
+const wait = function () { return new Promise(function (r) { setTimeout(r, 350); }); };
+var liff = { closeWindow: function () { alert('ในระบบจริง หน้าต่างจะปิดและกลับไปที่แชท LINE'); } };
+
+const DEMO = { sid: '', age: '6-15', entries: 0, envDone: false };
+function demoStatus() {
+  return { registered: true, subjectId: DEMO.sid, ageGroup: DEMO.age, status: 'active', studyDay: 3,
+    phase: 'P1', week: 1, label: 'Period 1 สัปดาห์ที่ 1', entriesThisWeek: DEMO.entries,
+    envDue: DEMO.envDone ? null : 1, active: true };
+}
+async function api(action, extra) {   // ตัวอย่าง: จำลองการตอบกลับของ server ไม่มีการส่งข้อมูล
+  await wait();
+  extra = extra || {};
+  if (action === 'status') return DEMO.sid ? demoStatus() : { registered: false };
+  if (action === 'register') {
+    if (!extra.subjectId || !extra.pin) throw new Error('กรุณากรอกรหัสผู้เข้าร่วมและ PIN (ตัวอย่างนี้ใช้ค่าใดก็ได้)');
+    DEMO.sid = extra.subjectId.toUpperCase(); DEMO.age = val('demoAge') || '6-15';
+    return demoStatus();
+  }
+  if (action === 'diary') { DEMO.entries++; return { entryNo: DEMO.entries, label: 'Period 1 สัปดาห์ที่ 1', pm25: demoPM() }; }
+  if (action === 'env') { DEMO.envDone = true; return { timepoint: 1 }; }
+  throw new Error('unknown');
+}
+
+async function boot() {
+  ST = await api('status');
+  route();
+}
+
+function route() {
+  if (!ST.registered) return viewRegister();
+  document.getElementById('meta').textContent = ST.subjectId + (ST.label ? ' • ' + ST.label : '');
+  viewHome();
+}
+
+// ===================== views =====================
+function viewRegister() {
+  $app.innerHTML = `
+    <div class="card">
+      <h2>ลงทะเบียนครั้งแรก</h2>
+      <div class="hint">กรอกรหัสผู้เข้าร่วมและ PIN ที่ได้รับจากทีมวิจัยในวันที่มาโรงพยาบาล</div>
+      <div class="q">รหัสผู้เข้าร่วม</div>
+      <input id="sid" type="text" placeholder="AR0001" autocapitalize="characters" maxlength="6">
+      <div class="q" style="margin-top:12px">PIN 6 หลัก</div>
+      <input id="pin" type="tel" inputmode="numeric" maxlength="6">
+      <div class="q" style="margin-top:12px">อายุของน้อง (เฉพาะตัวอย่างนี้ ระบบจริงทีมวิจัยตั้งไว้ให้)</div>
+      <select id="demoAge"><option value="6-15">6–15 ปี (เด็กตอบเอง)</option><option value="2-5">2–5 ปี (ผู้ปกครองตอบแทน)</option></select>
+      <div class="q" style="margin-top:12px">ท่านเกี่ยวข้องกับน้องอย่างไร</div>
+      <input id="rel" type="text" placeholder="เช่น มารดา">
+      <div class="hint" style="margin-top:8px">ขอให้ผู้บันทึกเป็นคนเดิมตลอดการศึกษา และเป็นคนเดียวกับที่พาน้องมาตรวจ</div>
+      <button class="btn" id="go">ลงทะเบียน</button><div class="err" id="err"></div>
+    </div>`;
+  document.getElementById('go').onclick = async function () {
+    this.disabled = true;
+    try {
+      ST = await api('register', { subjectId: val('sid'), pin: val('pin'), relation: val('rel') });
+      route();
+    } catch (e) { document.getElementById('err').textContent = e.message; this.disabled = false; }
+  };
+}
+
+function viewHome() {
+  if (!ST.active) {
+    $app.innerHTML = `<div class="card center"><h2>ขอบคุณค่ะ</h2>
+      <div>ขณะนี้ไม่อยู่ในช่วงบันทึกอาการ (${ST.status === 'active' ? 'Day ' + ST.studyDay : ST.status})</div>
+      <div class="hint">หากมีข้อสงสัย ติดต่อทีมวิจัย ${CONFIG.TEAM_PHONE}</div></div>` +
+      (ST.envDue ? envButton() : '');
+    bindEnv(); return;
+  }
+  const n = ST.entriesThisWeek;
+  $app.innerHTML = `
+    <div class="card">
+      <div><span class="pill">${ST.label}</span> <span class="pill">Day ${ST.studyDay}</span></div>
+      <div style="margin-top:10px">บันทึกสัปดาห์นี้แล้ว <b>${n}</b> / 2 ครั้ง</div>
+      <div class="hint">กรุณาบันทึกสัปดาห์ละ 2 ครั้ง (เช่น จันทร์ และ พฤหัสบดี) ต่อเนื่องตลอดการศึกษา รวมช่วงพักยา</div>
+      <button class="btn" id="d">${n >= 2 ? 'บันทึกเพิ่ม' : 'บันทึกอาการวันนี้'}</button>
+    </div>` + (ST.envDue ? envButton() : '');
+  document.getElementById('d').onclick = viewDiary;
+  bindEnv();
+}
+function envButton() {
+  return `<div class="card"><div class="q">แบบสอบถามสิ่งแวดล้อมในบ้าน (ครั้งที่ ${ST.envDue}/3)</div>
+    <div class="hint">ใช้เวลาประมาณ 5 นาที</div><button class="btn sec" id="e">ตอบแบบสอบถาม</button></div>`;
+}
+function bindEnv() { const b = document.getElementById('e'); if (b) b.onclick = viewEnv; }
+
+// ---------- diary ----------
+const TNSS = [
+  { k: 'c', t: 'คัดจมูก', proxy: 'น้องหายใจทางปาก หรือนอนกรน' },
+  { k: 'r', t: 'น้ำมูกไหล', proxy: 'ต้องเช็ดหรือสั่งน้ำมูก' },
+  { k: 's', t: 'จาม', proxy: 'น้องจาม' },
+  { k: 'i', t: 'คันจมูก', proxy: 'น้องขยี้จมูก หรือดันปลายจมูกขึ้น' },
+];
+const LEVELS = [['0', 'ไม่มี'], ['1', 'เล็กน้อย'], ['2', 'ปานกลาง'], ['3', 'รุนแรง']];
+const AE = [[1, 'ใจสั่น'], [2, 'เจ็บหน้าอก'], [3, 'ท้องเสีย'], [4, 'ปวดท้อง'], [5, 'คลื่นไส้ หรืออาเจียน'], [6, 'ผื่น'], [7, 'อื่น ๆ']];
+
+function viewDiary() {
+  const proxy = ST.ageGroup === '2-5';
+  D = { tnss: {}, vas: null, ae: null, recorderSame: null };
+  $app.innerHTML = `
+    <div class="card"><h2>1. อาการทางจมูก ${CONFIG.RECALL}</h2>
+      <div class="hint">0 = ไม่มี • 1 = มีเล็กน้อย ไม่รบกวน • 2 = ปานกลาง รบกวนบ้าง • 3 = รุนแรง รบกวนการเล่น การเรียน หรือการนอน</div>
+      ${proxy ? '' : '<div class="hint">ให้น้องเป็นคนตอบ ผู้ปกครองช่วยเสริมได้ ถ้าคำตอบไม่ตรงกันให้ใช้คำตอบของน้อง</div>'}
+      ${TNSS.map(function (x) {
+        return `<div style="margin-top:14px"><div class="q">${x.t}</div>
+          ${proxy ? '<div class="hint">สังเกต: ' + x.proxy + ' บ่อยแค่ไหน</div>' : ''}
+          <div class="opts" data-g="t_${x.k}">${LEVELS.map(function (l) {
+            return `<button class="opt" data-v="${l[0]}"><b>${l[0]}</b>${l[1]}</button>`; }).join('')}</div></div>`;
+      }).join('')}
+    </div>
+    <div class="card"><h2>2. ความรุนแรงของอาการจมูกโดยรวม</h2>
+      <div class="hint">แตะตัวเลข 0 = ไม่มีอาการ ถึง 10 = อาการแย่ที่สุด</div>
+      <div class="opts" data-g="vas" style="grid-template-columns:repeat(6,1fr)">
+        ${[0,1,2,3,4,5,6,7,8,9,10].map(function (n) { return `<button class="opt" data-v="${n}"><b>${n}</b></button>`; }).join('')}</div>
+      <div class="vas" style="margin-top:6px"><span>0 ไม่มีอาการ</span><span>10 แย่ที่สุด</span></div>
+    </div>
+    <div class="card"><h2>3. ตั้งแต่บันทึกครั้งก่อน น้องมีอาการเหล่านี้หรือไม่</h2>
+      <div class="opts col" data-g="ae0"><button class="opt" data-v="none">ไม่มีอาการใดเลย</button></div>
+      <div class="opts col" data-g="ae" data-multi="1" style="margin-top:6px">
+        ${AE.map(function (a) { return `<button class="opt" data-v="${a[0]}">${a[1]}</button>`; }).join('')}</div>
+      <input type="text" id="aeo" class="hidden" placeholder="ระบุอาการอื่น ๆ" style="margin-top:8px">
+    </div>
+    <div class="card"><h2>4. ผู้บันทึก</h2>
+      <div class="q">เป็นคนเดิมกับที่บันทึกครั้งก่อนหรือไม่</div>
+      <div class="opts" data-g="rec" style="grid-template-columns:1fr 1fr">
+        <button class="opt" data-v="Y">ใช่ คนเดิม</button><button class="opt" data-v="N">ไม่ใช่</button></div>
+      <input type="text" id="recn" class="hidden" placeholder="ผู้บันทึกครั้งนี้คือใคร (เช่น บิดา)" style="margin-top:8px">
+    </div>
+    <button class="btn" id="send">ส่งบันทึก</button><div class="err" id="err"></div>
+    <button class="btn sec" onclick="viewHome()">ย้อนกลับ</button>`;
+
+  $app.querySelectorAll('.opts').forEach(function (g) {
+    g.querySelectorAll('.opt').forEach(function (b) {
+      b.onclick = function () { pick(g, b); };
+    });
+  });
+  document.getElementById('send').onclick = sendDiary;
+}
+
+function pick(g, b) {
+  const name = g.dataset.g;
+  if (g.dataset.multi) {
+    b.classList.toggle('on');
+    document.querySelector('[data-g=ae0] .opt').classList.remove('on');
+  } else {
+    g.querySelectorAll('.opt').forEach(function (x) { x.classList.remove('on'); });
+    b.classList.add('on');
+  }
+  if (name.indexOf('t_') === 0) D.tnss[name.slice(2)] = Number(b.dataset.v);
+  if (name === 'vas') D.vas = Number(b.dataset.v);
+  if (name === 'ae0') document.querySelectorAll('[data-g=ae] .opt').forEach(function (x) { x.classList.remove('on'); });
+  if (name === 'ae' || name === 'ae0') {
+    const on = Array.from(document.querySelectorAll('[data-g=ae] .opt.on')).map(function (x) { return Number(x.dataset.v); });
+    const none = document.querySelector('[data-g=ae0] .opt').classList.contains('on');
+    D.ae = none ? [] : (on.length ? on : null);
+    document.getElementById('aeo').classList.toggle('hidden', on.indexOf(7) < 0);
+  }
+  if (name === 'rec') {
+    D.recorderSame = b.dataset.v === 'Y';
+    document.getElementById('recn').classList.toggle('hidden', D.recorderSame);
+  }
+}
+
+async function sendDiary() {
+  const err = document.getElementById('err');
+  const miss = [];
+  if (Object.keys(D.tnss).length < 4) miss.push('อาการทางจมูกให้ครบ 4 ข้อ');
+  if (D.vas === null) miss.push('คะแนนความรุนแรงโดยรวม');
+  if (D.ae === null) miss.push('อาการข้อ 3');
+  if (D.recorderSame === null) miss.push('ผู้บันทึก');
+  if (miss.length) { err.textContent = 'กรุณาตอบ: ' + miss.join(', '); return; }
+  const btn = document.getElementById('send'); btn.disabled = true; btn.textContent = 'กำลังส่ง...';
+  try {
+    const r = await api('diary', { data: {
+      tnss: D.tnss, vas: D.vas, ae: D.ae, aeOther: val('aeo'),
+      recorderSame: D.recorderSame, recorderNew: val('recn'),
+    } });
+    const urgent = D.ae.indexOf(1) >= 0 || D.ae.indexOf(2) >= 0;
+    const anyAe = D.ae.length > 0;
+    ST.entriesThisWeek = r.entryNo;
+    $app.innerHTML =
+      (urgent ? `<div class="alert red">น้องมีอาการใจสั่นหรือเจ็บหน้าอก กรุณาหยุดยา azithromycin (ถ้ากำลังกิน)
+        และติดต่อทีมวิจัยทันที ${CONFIG.TEAM_PHONE} หากอาการรุนแรงให้ไปห้องฉุกเฉินหรือโทร 1669</div>` : '') +
+      (!urgent && anyAe ? `<div class="alert">ทีมวิจัยได้รับแจ้งอาการแล้ว และจะติดต่อกลับ หากอาการแย่ลงโทร ${CONFIG.TEAM_PHONE}</div>` : '') +
+      `<div class="card center"><h2>บันทึกเรียบร้อย ✓</h2>
+        <div>${r.label} • ครั้งที่ ${r.entryNo}</div>
+        <div class="hint">ขอบคุณค่ะ</div></div>
+       <button class="btn" onclick="liff.closeWindow()">ปิด</button>
+       <button class="btn sec" onclick="viewHome()">กลับหน้าแรก</button>`;
+  } catch (e) { err.textContent = e.message; btn.disabled = false; btn.textContent = 'ส่งบันทึก'; }
+}
+
+// ---------- environmental questionnaire (CRF ภาคผนวก) ----------
+const ENVQ = [
+  { h: '1. ที่พักอาศัย' },
+  { id: 'q1_1', q: 'ประเภทที่พักอาศัย', o: [['house', 'บ้านเดี่ยว'], ['townhouse', 'ทาวน์เฮาส์'], ['condo', 'คอนโด/อพาร์ตเมนต์'], ['other', 'อื่น ๆ']] },
+  { id: 'q1_1_other', q: 'ระบุประเภทที่พัก', text: 1, show: function () { return ENV.q1_1 === 'other'; } },
+  { id: 'q1_2', q: 'สังเกตเห็นความชื้นหรือเชื้อราบนผนัง/เพดานในบ้านหรือไม่', o: [['none', 'ไม่มี'], ['mild', 'มีเล็กน้อย'], ['clear', 'มีชัดเจน']] },
+  { id: 'q1_3', q: 'ห้องนอนของเด็กมีพรมปูพื้นหรือไม่', o: [['no', 'ไม่มี'], ['yes', 'มี']] },
+  { id: 'q1_4', q: 'ห้องนอนของเด็กมีตุ๊กตาหรือไม่', o: [['no', 'ไม่มี'], ['yes', 'มี']] },
+  { id: 'q1_5', q: 'ใช้เครื่องปรับอากาศในห้องนอนหรือไม่', o: [['no', 'ไม่ใช้'], ['yes', 'ใช้']] },
+  { id: 'q1_5_freq', q: 'ล้างแผ่นกรองแอร์กี่ครั้งต่อเดือน', num: 1, show: function () { return ENV.q1_5 === 'yes'; } },
+  { h: '2. เครื่องกรองอากาศ' },
+  { id: 'q2_1', q: 'ใช้เครื่องกรองอากาศ (air purifier) ในบ้านหรือไม่', o: [['no', 'ไม่ใช้'], ['yes', 'ใช้']] },
+  { id: 'q2_2', q: 'ใช้ในห้องใด (เลือกได้หลายข้อ)', multi: 1, o: [['bedroom', 'ห้องนอนเด็ก'], ['living', 'ห้องนั่งเล่น'], ['other', 'อื่น ๆ']], show: function () { return ENV.q2_1 === 'yes'; } },
+  { id: 'q2_2_other', q: 'ระบุห้องอื่น', text: 1, show: function () { return (ENV.q2_2 || []).indexOf('other') >= 0; } },
+  { id: 'q2_3', q: 'เปิดใช้บ่อยแค่ไหน', o: [['always', 'ตลอดเวลา'], ['night', 'เฉพาะกลางคืน'], ['haze', 'เฉพาะช่วงฝุ่นควันสูง'], ['other', 'อื่น ๆ']], show: function () { return ENV.q2_1 === 'yes'; } },
+  { id: 'q2_4', q: 'รูปแบบการใช้เครื่องกรองอากาศเปลี่ยนจากครั้งก่อนหรือไม่', tp: 2, o: [['same', 'ไม่เปลี่ยน'], ['start', 'เริ่มใช้ใหม่'], ['stop', 'เลิกใช้'], ['freq', 'ใช้ถี่ขึ้น/น้อยลง']] },
+  { id: 'q2_4_detail', q: 'ระบุรายละเอียด', text: 1, show: function () { return ENV.q2_4 === 'freq'; } },
+  { h: '3. สัตว์เลี้ยง' },
+  { id: 'q3_1', q: 'ปัจจุบันเลี้ยงสัตว์ในบ้านหรือไม่ (เลือกได้หลายข้อ)', multi: 1, excl: 'none', o: [['none', 'ไม่เลี้ยง'], ['cat', 'แมว'], ['dog', 'สุนัข'], ['bird', 'นก'], ['other', 'อื่น ๆ']] },
+  { id: 'q3_1_other', q: 'ระบุสัตว์อื่น', text: 1, show: function () { return (ENV.q3_1 || []).indexOf('other') >= 0; } },
+  { id: 'q3_2', q: 'สัตว์เลี้ยงเข้ามาในบ้านหรือไม่', o: [['never', 'ไม่เคย'], ['some', 'บางครั้ง'], ['regular', 'เป็นประจำ']], show: hasPet },
+  { id: 'q3_3', q: 'เลี้ยงมาแล้วกี่ปี', num: 1, show: hasPet },
+  { h: '4. เครื่องนอน' },
+  { id: 'q4_1', q: 'ซักผ้าปูที่นอน/ปลอกหมอนของเด็กบ่อยแค่ไหน', o: [['lt1m', 'น้อยกว่าเดือนละครั้ง'], ['1m', 'เดือนละครั้ง'], ['2w', '2 สัปดาห์/ครั้ง'], ['1w', 'สัปดาห์ละครั้งหรือถี่กว่า']] },
+  { id: 'q4_2', q: 'ใช้ปลอกกันไรฝุ่นสำหรับที่นอน/หมอนหรือไม่', o: [['no', 'ไม่ใช้'], ['yes', 'ใช้']] },
+  { id: 'q4_3', q: 'ตากแดด/ดูดฝุ่นที่นอนบ่อยแค่ไหน', o: [['never', 'ไม่เคย'], ['rare', 'นาน ๆ ครั้ง'], ['1m', 'เดือนละครั้ง'], ['1w', 'ทุกสัปดาห์']] },
+  { h: '5. ควันบุหรี่' },
+  { id: 'q5_1', q: 'มีผู้สูบบุหรี่อาศัยอยู่บ้านเดียวกับเด็กหรือไม่', o: [['no', 'ไม่มี'], ['yes', 'มี']] },
+  { id: 'q5_1_n', q: 'จำนวนผู้สูบ (คน)', num: 1, show: function () { return ENV.q5_1 === 'yes'; } },
+  { id: 'q5_2', q: 'สูบในบ้านหรือในรถที่เด็กอยู่ด้วยหรือไม่', o: [['outside', 'สูบนอกบ้านเท่านั้น'], ['some', 'สูบในบ้าน/รถเป็นบางครั้ง'], ['regular', 'สูบในบ้าน/รถเป็นประจำ']], show: function () { return ENV.q5_1 === 'yes'; } },
+  { id: 'q5_3', q: 'โดยเฉลี่ยเด็กได้รับควันบุหรี่มือสองกี่วันต่อสัปดาห์', num: 1 },
+  { h: '6. สารก่อภูมิแพ้อื่น ๆ (ช่วงเวลาอ้างอิง)' },
+  { id: 'q6_1a', q: 'เกสรดอกไม้/หญ้า (กิจกรรมกลางแจ้ง)', o: FREQ() },
+  { id: 'q6_1b', q: 'ฝุ่นจากการก่อสร้าง/การเผาไหม้นอกบ้าน', o: FREQ() },
+  { id: 'q6_1c', q: 'น้ำหอม/สเปรย์ปรับอากาศในบ้าน', o: FREQ() },
+  { id: 'q6_1d', q: 'สารเคมีทำความสะอาดที่มีกลิ่นฉุน', o: FREQ() },
+  { id: 'q6_2', q: 'มีกิจกรรมกลางแจ้งช่วงค่าฝุ่น PM2.5 สูงหรือไม่', o: [['no', 'ไม่มี'], ['some', 'บางครั้ง'], ['regular', 'เป็นประจำ']] },
+  { h: '7. การเปลี่ยนแปลงตั้งแต่ตอบครั้งก่อน', tp: 2 },
+  { id: 'q7', q: 'มีการเปลี่ยนแปลงต่อไปนี้หรือไม่ (เลือกได้หลายข้อ)', tp: 2, multi: 1, excl: 'none', o: [['none', 'ไม่มีการเปลี่ยนแปลง'], ['moved', 'ย้ายที่พัก'], ['pet', 'มีสัตว์เลี้ยงใหม่ หรือสัตว์เดิมไม่อยู่'], ['cleaning', 'เปลี่ยนการทำความสะอาดบ้าน/เครื่องนอน'], ['smoker', 'คนในบ้านเริ่มหรือเลิกสูบบุหรี่'], ['other', 'อื่น ๆ']] },
+  { id: 'q7_detail', q: 'รายละเอียด', text: 1, show: function () { return (ENV.q7 || []).some(function (x) { return x !== 'none'; }); } },
+  { h: 'ผู้ตอบ' },
+  { id: 'respondent_relation', q: 'ท่านเกี่ยวข้องกับน้องอย่างไร', text: 1 },
+];
+function FREQ() { return [['never', 'ไม่สัมผัสเลย'], ['rare', 'นาน ๆ ครั้ง'], ['often', 'บ่อย/เป็นประจำ']]; }
+function hasPet() { const p = ENV.q3_1 || []; return p.length && p.indexOf('none') < 0; }
+
+function viewEnv() {
+  ENV = {};
+  const tp = ST.envDue;
+  const ref = tp === 1 ? 'ช่วง 1 เดือนที่ผ่านมา' : 'ช่วงประมาณ 2 เดือนที่ผ่านมา (ตั้งแต่ตอบครั้งก่อน)';
+  let html = `<div class="card"><h2>แบบสอบถามสิ่งแวดล้อมในบ้าน ครั้งที่ ${tp}/3</h2>
+    <div class="hint">ตอบตามสภาพจริงใน${ref}</div></div>`;
+  ENVQ.forEach(function (x) {
+    if (x.tp && tp < x.tp) return;
+    if (x.h) { html += `<h2 style="margin:16px 4px 8px">${x.h}</h2>`; return; }
+    html += `<div class="card" data-q="${x.id}"><div class="q">${x.q}</div>`;
+    if (x.o) html += `<div class="opts col" data-g="${x.id}">${x.o.map(function (o) {
+      return `<button class="opt" data-v="${o[0]}">${o[1]}</button>`; }).join('')}</div>`;
+    else html += `<input id="f_${x.id}" type="${x.num ? 'number' : 'text'}" ${x.num ? 'inputmode="decimal" min="0"' : ''}>`;
+    html += '</div>';
+  });
+  html += `<button class="btn" id="send">ส่งแบบสอบถาม</button><div class="err" id="err"></div>
+    <button class="btn sec" onclick="viewHome()">ย้อนกลับ</button>`;
+  $app.innerHTML = html;
+
+  ENVQ.forEach(function (x) {
+    if (!x.o || (x.tp && tp < x.tp)) return;
+    const g = document.querySelector('[data-g="' + x.id + '"]');
+    g.querySelectorAll('.opt').forEach(function (b) {
+      b.onclick = function () {
+        if (x.multi) {
+          if (x.excl && b.dataset.v === x.excl) g.querySelectorAll('.opt').forEach(function (o) { o.classList.remove('on'); });
+          else if (x.excl) g.querySelector('[data-v="' + x.excl + '"]').classList.remove('on');
+          b.classList.toggle('on');
+          ENV[x.id] = Array.from(g.querySelectorAll('.opt.on')).map(function (o) { return o.dataset.v; });
+        } else {
+          g.querySelectorAll('.opt').forEach(function (o) { o.classList.remove('on'); });
+          b.classList.add('on'); ENV[x.id] = b.dataset.v;
+        }
+        refreshEnv();
+      };
+    });
+  });
+  refreshEnv();
+  document.getElementById('send').onclick = sendEnv;
+}
+
+function refreshEnv() {
+  ENVQ.forEach(function (x) {
+    if (!x.id || !x.show) return;
+    const el = document.querySelector('[data-q="' + x.id + '"]');
+    if (el) el.classList.toggle('hidden', !x.show());
+  });
+}
+
+async function sendEnv() {
+  const tp = ST.envDue, err = document.getElementById('err'), miss = [];
+  const data = {};
+  ENVQ.forEach(function (x) {
+    if (!x.id || (x.tp && tp < x.tp)) return;
+    if (x.show && !x.show()) return;
+    const v = x.o ? ENV[x.id] : val('f_' + x.id);
+    const empty = v === undefined || v === '' || (Array.isArray(v) && !v.length);
+    if (empty && !x.text) miss.push(x.q);
+    data[x.id] = empty ? '' : v;
+  });
+  if (miss.length) { err.textContent = 'ยังไม่ได้ตอบ ' + miss.length + ' ข้อ: ' + miss[0]; return; }
+  const btn = document.getElementById('send'); btn.disabled = true; btn.textContent = 'กำลังส่ง...';
+  try {
+    await api('env', { data: data });
+    ST.envDue = null;
+    $app.innerHTML = `<div class="card center"><h2>ส่งแบบสอบถามเรียบร้อย ✓</h2><div class="hint">ขอบคุณค่ะ</div></div>
+      <button class="btn" onclick="viewHome()">กลับหน้าแรก</button>`;
+  } catch (e) { err.textContent = e.message; btn.disabled = false; btn.textContent = 'ส่งแบบสอบถาม'; }
+}
+
+// ===================== utils =====================
+function val(id) { const el = document.getElementById(id); return el ? el.value.trim() : ''; }
+function fail(e) {
+  $app.innerHTML = `<div class="card"><h2>เกิดข้อผิดพลาด</h2><div class="err">${e.message || e}</div>
+    <div class="hint">ลองปิดแล้วเปิดใหม่ หากยังไม่ได้ ติดต่อทีมวิจัย ${CONFIG.TEAM_PHONE}</div></div>`;
+}
+
+boot();
+</script>
+</body>
+</html>
